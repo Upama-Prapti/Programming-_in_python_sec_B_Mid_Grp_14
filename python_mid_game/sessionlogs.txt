@@ -1,0 +1,1 @@
+[2026-03-23 01:21:19]  result=DEAD    score=1,520     kills=7     wave=1    time=27s
