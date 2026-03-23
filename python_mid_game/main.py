@@ -297,7 +297,7 @@ def update_player(p, keys):
     if p["inv_cd"]   > 0: p["inv_cd"]   -= 1
     if p["muzzle"]   > 0: p["muzzle"]   -= 1
     move_player(p, keys)
-    def aim_player(p, mx, my, cam_x, cam_y):
+def aim_player(p, mx, my, cam_x, cam_y):
     wx = mx + cam_x - W//2
     wy = my + cam_y - H//2
     p["angle"] = math.atan2(wy - p["y"], wx - p["x"])
