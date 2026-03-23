@@ -297,3 +297,311 @@ def update_player(p, keys):
     if p["inv_cd"]   > 0: p["inv_cd"]   -= 1
     if p["muzzle"]   > 0: p["muzzle"]   -= 1
     move_player(p, keys)
+    def aim_player(p, mx, my, cam_x, cam_y):
+    wx = mx + cam_x - W//2
+    wy = my + cam_y - H//2
+    p["angle"] = math.atan2(wy - p["y"], wx - p["x"])
+
+def player_shoot(p, bullets, mx, my, cam_x, cam_y):
+    if p["shoot_cd"] > 0 or p["ammo"] <= 0: return
+    p["shoot_cd"] = 8; p["ammo"] -= 1; p["muzzle"] = 6
+    wx = mx + cam_x - W//2; wy = my + cam_y - H//2
+    angle = math.atan2(wy-p["y"], wx-p["x"]) + random.uniform(-0.05,0.05)
+    bullets.append(make_bullet(p["x"], p["y"], angle, 14, 25, YELLOW, True))
+    play(snd_shoot)
+    gx = p["x"] + math.cos(angle)*24
+    gy = p["y"] + math.sin(angle)*24
+    add_particles(gx, gy, ORANGE, 6, 5, 3, 10)
+
+def hurt_player(p, dmg):
+    if p["inv_cd"] > 0: return
+    p["hp"] -= dmg; p["inv_cd"] = 40
+    play(snd_hurt)
+    add_particles(p["x"], p["y"], BLOOD, 10, 4, 4, 30)
+    if p["hp"] <= 0: p["hp"] = 0; p["alive"] = False
+
+def draw_player(surf, p, cam_x, cam_y):
+    if not p["alive"]: return
+    if p["inv_cd"] > 0 and (p["inv_cd"]//4)%2 == 0: return
+    sx = int(p["x"]-cam_x+W//2); sy = int(p["y"]-cam_y+H//2)
+    pygame.draw.ellipse(surf,(20,15,10),(sx-14,sy+10,28,10))
+    leg = int(math.sin(p["foot"]*0.4)*5)
+    pygame.draw.line(surf,(30,30,50),(sx,sy+4),(sx-7,sy+16+leg),4)
+    pygame.draw.line(surf,(30,30,50),(sx,sy+4),(sx+7,sy+16-leg),4)
+    pygame.draw.circle(surf,(20,15,10),(sx-7,sy+18+leg),4)
+    pygame.draw.circle(surf,(20,15,10),(sx+7,sy+18-leg),4)
+    pygame.draw.circle(surf,BLUE,(sx,sy),12)
+    pygame.draw.circle(surf,(30,60,130),(sx,sy),12,2)
+    angle = p["angle"]
+    ax = sx+int(math.cos(angle)*10); ay = sy+int(math.sin(angle)*10)
+    pygame.draw.line(surf,SKIN,(sx,sy),(ax,ay),5)
+    gx = sx+int(math.cos(angle)*24); gy = sy+int(math.sin(angle)*24)
+    pygame.draw.line(surf,(50,50,60),(ax,ay),(gx,gy),4)
+    if p["muzzle"] > 0:
+        for r in range(10,2,-3):
+            gc=(min(255,p["muzzle"]*40),min(255,p["muzzle"]*20),0)
+            pygame.draw.circle(surf,gc,(gx,gy),r)
+    pygame.draw.circle(surf,SKIN,(sx,sy-12),10)
+    pygame.draw.circle(surf,(180,140,100),(sx,sy-12),10,1)
+    pygame.draw.arc(surf,(40,25,10),(sx-10,sy-24,20,16),0,math.pi,5)
+    edx=int(math.cos(angle)*4); edy=int(math.sin(angle)*4)
+    pygame.draw.circle(surf,WHITE,(sx+edx-2,sy-12+edy),3)
+    pygame.draw.circle(surf,(30,30,80),(sx+edx-2,sy-12+edy),1)
+
+# ─────────────────────────────────────────────
+#  BULLETS
+# ─────────────────────────────────────────────
+def make_bullet(x, y, angle, speed, dmg, color, friendly):
+    return {"x":x,"y":y,
+            "vx":math.cos(angle)*speed,
+            "vy":math.sin(angle)*speed,
+            "dmg":dmg,"color":color,
+            "friendly":friendly,"alive":True,"trail":[]}
+
+def update_bullet(b):
+    b["trail"].append((b["x"],b["y"]))
+    if len(b["trail"])>6: b["trail"].pop(0)
+    b["x"]+=b["vx"]; b["y"]+=b["vy"]
+    tx=int(b["x"]//TILE); ty=int(b["y"]//TILE)
+    if 0<=tx<MAP_W and 0<=ty<MAP_H:
+        t=tiles[ty][tx]
+        if t==1 or t==3:
+            b["alive"]=False
+            add_particles(b["x"],b["y"],GREY,5,2,2,10)
+    else:
+        b["alive"]=False
+
+def draw_bullet(surf, b, cam_x, cam_y):
+    for i,(tx,ty) in enumerate(b["trail"]):
+        a=(i+1)/len(b["trail"])
+        col=tuple(int(v*a*0.5) for v in b["color"])
+        pygame.draw.circle(surf,col,(int(tx-cam_x),int(ty-cam_y)),max(1,int(3*a)))
+    sx=int(b["x"]-cam_x); sy=int(b["y"]-cam_y)
+    pygame.draw.circle(surf,WHITE,(sx,sy),4)
+    pygame.draw.circle(surf,b["color"],(sx,sy),3)
+
+# ─────────────────────────────────────────────
+#  ENEMY MOVEMENT HELPER
+# ─────────────────────────────────────────────
+def move_enemy(e, tx, ty, spd=None):
+    if spd is None: spd = e["speed"]
+    dx=tx-e["x"]; dy=ty-e["y"]; dist=max(1,math.hypot(dx,dy))
+    nx=e["x"]+dx/dist*spd; ny=e["y"]+dy/dist*spd; r=e["radius"]-4
+    corners=[(-r,-r),(r,-r),(-r,r),(r,r)]
+    if not any(is_wall(nx+ox,e["y"]+oy) for ox,oy in corners): e["x"]=nx
+    if not any(is_wall(e["x"]+ox,ny+oy) for ox,oy in corners): e["y"]=ny
+
+def hurt_enemy(e, dmg):
+    e["hp"]-=dmg; e["hit_flash"]=8; play(snd_hit)
+    if e["hp"]<=0:
+        e["alive"]=False
+        add_particles(e["x"],e["y"],BLOOD,25,5,5,40)
+        add_particles(e["x"],e["y"],DARK_RED,10,3,3,30)
+        play(snd_die); return True
+    return False
+
+def draw_hp_bar(surf, e, cam_x, cam_y, bw=36):
+    sx=int(e["x"]-cam_x+W//2); sy=int(e["y"]-cam_y+H//2)
+    bx=sx-bw//2; by=sy-e["radius"]-12
+    rat=max(0,e["hp"]/e["max_hp"])
+    pygame.draw.rect(surf,(60,0,0),(bx,by,bw,5))
+    pygame.draw.rect(surf,RED,(bx,by,int(bw*rat),5))
+
+# ─────────────────────────────────────────────
+#  GRUNT DEMON
+# ─────────────────────────────────────────────
+def make_grunt(x, y, level=1):
+    return {"kind":"grunt","x":x,"y":y,
+            "hp":50+level*15,"max_hp":50+level*15,
+            "speed":1.8+level*0.2,"dmg":12,"score":100+level*20,
+            "radius":16,"alive":True,"anim":random.randint(0,20),
+            "shoot_cd":random.randint(60,180),"attack_cd":0,"hit_flash":0,
+            "wander_angle":random.uniform(0,math.tau),"wander_timer":0,
+            "surround_angle":random.uniform(0,math.tau)}  # angle for surround formation
+
+def update_grunt(e, player, bullets, boss_alive, boss_x, boss_y):
+    e["anim"]=(e["anim"]+1)%20
+    e["attack_cd"]=max(0,e["attack_cd"]-1)
+    if e["hit_flash"]>0: e["hit_flash"]-=1
+    dist_player=math.hypot(player["x"]-e["x"],player["y"]-e["y"])
+
+    # SURROUND MODE: if player is near boss (within 350px) and boss alive
+    # all grunts swarm in formation around player
+    if boss_alive:
+        dist_to_boss = math.hypot(boss_x-player["x"], boss_y-player["y"])
+        if dist_to_boss < 350:
+            # surround: each demon takes a different angle around player
+            e["surround_angle"] += 0.02  # slowly rotate formation
+            surround_dist = 100
+            tx = player["x"] + math.cos(e["surround_angle"]) * surround_dist
+            ty = player["y"] + math.sin(e["surround_angle"]) * surround_dist
+            move_enemy(e, tx, ty, e["speed"] * 1.5)  # faster surround
+            if dist_player < e["radius"]+player["radius"]+5 and e["attack_cd"]==0:
+                hurt_player(player, e["dmg"]+5)  # extra damage in surround
+                e["attack_cd"]=30
+            return
+
+    # Normal AI
+    if dist_player < 300:
+        move_enemy(e, player["x"], player["y"])
+        if dist_player < e["radius"]+player["radius"]+5 and e["attack_cd"]==0:
+            hurt_player(player, e["dmg"]); e["attack_cd"]=45
+    else:
+        e["wander_timer"]+=1
+        if e["wander_timer"]>60:
+            e["wander_angle"]=random.uniform(0,math.tau); e["wander_timer"]=0
+        wx=e["x"]+math.cos(e["wander_angle"])*30
+        wy=e["y"]+math.sin(e["wander_angle"])*30
+        move_enemy(e,wx,wy,0.8)
+
+def draw_grunt(surf, e, cam_x, cam_y):
+    sx=int(e["x"]-cam_x+W//2); sy=int(e["y"]-cam_y+H//2); a=e["anim"]
+    col=(255,80,80) if e["hit_flash"]>0 else (120,20,20)
+    bob=int(math.sin(a*0.3)*3)
+    pygame.draw.ellipse(surf,(15,8,8),(sx-16,sy+12,32,12))
+    pygame.draw.circle(surf,col,(sx,sy+bob),16)
+    pygame.draw.circle(surf,(200,40,10),(sx,sy+bob),16,2)
+    pygame.draw.polygon(surf,(80,15,15),[(sx-8,sy-14+bob),(sx-14,sy-26+bob),(sx-4,sy-18+bob)])
+    pygame.draw.polygon(surf,(80,15,15),[(sx+8,sy-14+bob),(sx+14,sy-26+bob),(sx+4,sy-18+bob)])
+    for ex,ey in [(sx-5,sy-6+bob),(sx+5,sy-6+bob)]:
+        pygame.draw.circle(surf,ORANGE,(ex,ey),5)
+        pygame.draw.circle(surf,YELLOW,(ex,ey),3)
+        pygame.draw.circle(surf,WHITE,(ex,ey),1)
+    draw_hp_bar(surf,e,cam_x,cam_y)
+
+# ─────────────────────────────────────────────
+#  SHOOTER DEMON
+# ─────────────────────────────────────────────
+def make_shooter(x, y, level=1):
+    return {"kind":"shooter","x":x,"y":y,
+            "hp":40+level*12,"max_hp":40+level*12,
+            "speed":1.2+level*0.1,"dmg":8,"score":150+level*30,
+            "radius":16,"alive":True,"anim":random.randint(0,20),
+            "shoot_cd":random.randint(60,120),"attack_cd":0,"hit_flash":0,
+            "wander_angle":random.uniform(0,math.tau),"wander_timer":0,
+            "surround_angle":random.uniform(0,math.tau)}
+
+def update_shooter(e, player, bullets, boss_alive, boss_x, boss_y):
+    e["anim"]=(e["anim"]+1)%20
+    if e["hit_flash"]>0: e["hit_flash"]-=1
+    if e["shoot_cd"]>0: e["shoot_cd"]-=1
+    dist_player=math.hypot(player["x"]-e["x"],player["y"]-e["y"])
+
+    # SURROUND MODE near boss
+    if boss_alive:
+        dist_to_boss=math.hypot(boss_x-player["x"],boss_y-player["y"])
+        if dist_to_boss < 350:
+            e["surround_angle"]+=0.015
+            surround_dist=160
+            tx=player["x"]+math.cos(e["surround_angle"])*surround_dist
+            ty=player["y"]+math.sin(e["surround_angle"])*surround_dist
+            move_enemy(e,tx,ty,e["speed"]*1.3)
+            # shoot from surround position
+            if e["shoot_cd"]==0 and dist_player<250:
+                angle=math.atan2(player["y"]-e["y"],player["x"]-e["x"])+random.uniform(-0.1,0.1)
+                bullets.append(make_bullet(e["x"],e["y"],angle,8,e["dmg"]+3,PURPLE,False))
+                e["shoot_cd"]=40; play(snd_enemy)
+            return
+
+    # Normal AI
+    if dist_player<320:
+        if dist_player<160:
+            dx=e["x"]-player["x"]; dy=e["y"]-player["y"]
+            d=max(1,math.hypot(dx,dy))
+            move_enemy(e,e["x"]+dx/d*40,e["y"]+dy/d*40)
+        elif dist_player>220:
+            move_enemy(e,player["x"],player["y"])
+        if e["shoot_cd"]==0 and dist_player<300:
+            angle=math.atan2(player["y"]-e["y"],player["x"]-e["x"])+random.uniform(-0.15,0.15)
+            bullets.append(make_bullet(e["x"],e["y"],angle,7,e["dmg"],PURPLE,False))
+            e["shoot_cd"]=random.randint(60,100); play(snd_enemy)
+    else:
+        e["wander_timer"]+=1
+        if e["wander_timer"]>80: e["wander_angle"]=random.uniform(0,math.tau); e["wander_timer"]=0
+        move_enemy(e,e["x"]+math.cos(e["wander_angle"])*30,
+                     e["y"]+math.sin(e["wander_angle"])*30,0.6)
+
+def draw_shooter(surf, e, cam_x, cam_y):
+    sx=int(e["x"]-cam_x+W//2); sy=int(e["y"]-cam_y+H//2); a=e["anim"]
+    col=(200,120,255) if e["hit_flash"]>0 else (40,20,100)
+    bob=int(math.sin(a*0.2)*6)
+    pygame.draw.ellipse(surf,(10,5,20),(sx-14,sy+12,28,10))
+    pygame.draw.circle(surf,col,(sx,sy+bob),15)
+    pygame.draw.circle(surf,PURPLE,(sx,sy+bob),15,2)
+    for i in range(4):
+        tang=a*0.05+i*math.pi/2
+        tx2=sx+int(math.cos(tang)*12); ty2=sy+bob+14+int(math.sin(tang*2)*8)
+        pygame.draw.line(surf,PURPLE,(sx,sy+bob+12),(tx2,ty2),3)
+    for ex2,ey2 in [(sx-6,sy-4+bob),(sx+6,sy-4+bob),(sx,sy-10+bob)]:
+        pygame.draw.circle(surf,PURPLE,(ex2,ey2),5)
+        pygame.draw.circle(surf,(200,100,255),(ex2,ey2),3)
+        pygame.draw.circle(surf,WHITE,(ex2,ey2),1)
+    draw_hp_bar(surf,e,cam_x,cam_y)
+
+# ─────────────────────────────────────────────
+#  BOSS DEMON — guards Prapti
+# ─────────────────────────────────────────────
+def make_boss():
+    return {"kind":"boss",
+            "x":float(BOSS_X),"y":float(BOSS_Y),
+            "hp":600,"max_hp":600,
+            "speed":1.0,"dmg":28,"score":3000,
+            "radius":32,"alive":True,
+            "anim":0,"spin":0,
+            "shoot_cd":0,"attack_cd":0,"hit_flash":0,
+            "pattern":0,"enraged":False,
+            "roar_cd":0}
+
+def update_boss(e, player, bullets):
+    e["anim"]=(e["anim"]+1)%60
+    e["spin"]=(e["spin"]+2)%360
+    if e["hit_flash"]>0: e["hit_flash"]-=1
+    if e["shoot_cd"]>0: e["shoot_cd"]-=1
+    if e["attack_cd"]>0: e["attack_cd"]-=1
+    if e["roar_cd"]>0: e["roar_cd"]-=1
+
+    if not e["enraged"] and e["hp"]<e["max_hp"]*0.4:
+        e["enraged"]=True; e["speed"]=2.2
+        add_particles(e["x"],e["y"],RED,50,10,7,70)
+        do_shake(14); play(snd_roar)
+
+    dist=math.hypot(player["x"]-e["x"],player["y"]-e["y"])
+    move_enemy(e,player["x"],player["y"])
+
+    # melee
+    if dist<e["radius"]+player["radius"]+5 and e["attack_cd"]==0:
+        hurt_player(player,e["dmg"]); e["attack_cd"]=25; do_shake(8)
+
+    # roar every 5s — warns surround incoming
+    if e["roar_cd"]==0:
+        e["roar_cd"]=300
+        play(snd_roar)
+        add_particles(e["x"],e["y"],ORANGE,30,8,5,50)
+
+    # shooting patterns — faster when enraged
+    cd=15 if e["enraged"] else 28
+    if e["shoot_cd"]==0:
+        e["shoot_cd"]=cd
+        pat=e["pattern"]
+        if pat==0:   # 8-way ring
+            for i in range(8):
+                ang=math.radians(e["spin"]+i*45)
+                bullets.append(make_bullet(e["x"],e["y"],ang,7,16,RED,False))
+        elif pat==1: # aimed triple
+            ang=math.atan2(player["y"]-e["y"],player["x"]-e["x"])
+            for off in (-0.25,0,0.25):
+                bullets.append(make_bullet(e["x"],e["y"],ang+off,10,22,ORANGE,False))
+        elif pat==2: # spiral
+            for i in range(4):
+                ang=math.radians(e["spin"]*2+i*90)
+                bullets.append(make_bullet(e["x"],e["y"],ang,8,18,PURPLE,False))
+        elif pat==3: # cross burst (enraged only)
+            if e["enraged"]:
+                for i in range(12):
+                    ang=math.radians(i*30)
+                    bullets.append(make_bullet(e["x"],e["y"],ang,6,14,RED,False))
+            else:
+                ang=math.atan2(player["y"]-e["y"],player["x"]-e["x"])
+                bullets.append(make_bullet(e["x"],e["y"],ang,11,25,ORANGE,False))
+        e["pattern"]=(e["pattern"]+1)%4
+        play(snd_enemy)
