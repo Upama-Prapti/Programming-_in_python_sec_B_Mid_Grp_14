@@ -897,7 +897,7 @@ def draw_minimap(surf,player,enemies,boss,dragon,frame):
     surf.blit(mm,(mmx,mmy))
     surf.blit(font_tiny.render("MINIMAP",True,(130,100,60)),
               (mmx+mmw//2-35,mmy+mmh+3))
- def draw_hud(surf,player,wave,enemies,boss,dragon,frame):
+def draw_hud(surf,player,wave,enemies,boss,dragon,frame):
     panel=pygame.Surface((W,72)); panel.fill((8,5,4)); surf.blit(panel,(0,H-72))
     pulse=abs(math.sin(frame*0.03))
     pygame.draw.line(surf,(int(120+60*pulse),int(30*pulse),5),(0,H-72),(W,H-72),2)
