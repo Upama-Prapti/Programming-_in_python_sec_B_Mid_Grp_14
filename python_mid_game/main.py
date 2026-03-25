@@ -297,7 +297,7 @@ def update_player(p, keys):
     if p["inv_cd"]   > 0: p["inv_cd"]   -= 1
     if p["muzzle"]   > 0: p["muzzle"]   -= 1
     move_player(p, keys)
-    def aim_player(p, mx, my, cam_x, cam_y):
+def aim_player(p, mx, my, cam_x, cam_y):
     wx = mx + cam_x - W//2
     wy = my + cam_y - H//2
     p["angle"] = math.atan2(wy - p["y"], wx - p["x"])
@@ -605,3 +605,295 @@ def update_boss(e, player, bullets):
                 bullets.append(make_bullet(e["x"],e["y"],ang,11,25,ORANGE,False))
         e["pattern"]=(e["pattern"]+1)%4
         play(snd_enemy)
+def draw_boss(surf, e, cam_x, cam_y):
+    sx=int(e["x"]-cam_x+W//2); sy=int(e["y"]-cam_y+H//2)
+    col=(255,100,100) if e["hit_flash"]>0 else (150,15,15)
+    ec=ORANGE if e["enraged"] else RED
+    for r in range(45,22,-6):
+        pygame.draw.circle(surf,(max(0,80-(45-r)*3),0,0),(sx,sy),r)
+    pygame.draw.circle(surf,col,(sx,sy),32)
+    pygame.draw.circle(surf,ec,(sx,sy),32,3)
+    for i in range(6):
+        ang=math.radians(e["spin"]+i*60)
+        ax2=sx+int(math.cos(ang)*42); ay2=sy+int(math.sin(ang)*42)
+        pygame.draw.line(surf,ec,(sx,sy),(ax2,ay2),5)
+        pygame.draw.circle(surf,YELLOW,(ax2,ay2),7)
+    for i in range(8):
+        ang=math.radians(-e["spin"]*2+i*45)
+        pygame.draw.circle(surf,ORANGE,
+                           (sx+int(math.cos(ang)*22),sy+int(math.sin(ang)*22)),4)
+    core=(255,50,50) if e["enraged"] else (200,20,20)
+    pygame.draw.circle(surf,core,(sx,sy),14)
+    pygame.draw.circle(surf,WHITE,(sx,sy),6)
+    # boss HP bar at top of screen
+    bw=500; bx2=W//2-bw//2; by2=10
+    pygame.draw.rect(surf,(60,0,0),(bx2,by2,bw,22))
+    pygame.draw.rect(surf,RED,(bx2,by2,int(bw*max(0,e["hp"]/e["max_hp"])),22))
+    pygame.draw.rect(surf,WHITE,(bx2-1,by2-1,bw+2,24),2)
+    lbl=font_small.render("☠  DEMON LORD  ☠",True,RED)
+    surf.blit(lbl,(W//2-lbl.get_width()//2,by2+26))
+    if e["enraged"]:
+        en=font_tiny.render("!! ENRAGED !! DEMONS SWARMING !!",True,ORANGE)
+        surf.blit(en,(W//2-en.get_width()//2,by2+46))
+
+# ─────────────────────────────────────────────
+#  DRAGON (boss pet) — orbits boss, breathes fire
+# ─────────────────────────────────────────────
+def make_dragon(boss_x, boss_y):
+    return {"kind":"dragon",
+            "x":float(boss_x+80),"y":float(boss_y),
+            "hp":200,"max_hp":200,
+            "speed":2.5,"dmg":20,"score":800,
+            "radius":20,"alive":True,
+            "anim":0,"angle":0.0,
+            "orbit_angle":0.0,  # angle around boss
+            "orbit_speed":0.025,
+            "orbit_radius":110,
+            "shoot_cd":45,"hit_flash":0,
+            "fire_trail":[]}   # trail of fire particles
+
+def update_dragon(d, boss, player, bullets):
+    d["anim"]=(d["anim"]+1)%30
+    if d["hit_flash"]>0: d["hit_flash"]-=1
+    if d["shoot_cd"]>0: d["shoot_cd"]-=1
+
+    # orbit around boss
+    d["orbit_angle"]+=d["orbit_speed"]
+    if boss and boss["alive"]:
+        # orbit boss
+        target_x=boss["x"]+math.cos(d["orbit_angle"])*d["orbit_radius"]
+        target_y=boss["y"]+math.sin(d["orbit_angle"])*d["orbit_radius"]
+        # speed toward orbit point
+        dx=target_x-d["x"]; dy=target_y-d["y"]
+        dist=max(1,math.hypot(dx,dy))
+        d["x"]+=dx/dist*d["speed"]*2
+        d["y"]+=dy/dist*d["speed"]*2
+        d["angle"]=math.atan2(dy,dx)
+    else:
+        # boss dead — dragon charges player
+        move_enemy(d,player["x"],player["y"])
+        d["angle"]=math.atan2(player["y"]-d["y"],player["x"]-d["x"])
+
+    # breathe fire at player
+    dist_player=math.hypot(player["x"]-d["x"],player["y"]-d["y"])
+    if d["shoot_cd"]==0 and dist_player<350:
+        ang=math.atan2(player["y"]-d["y"],player["x"]-d["x"])
+        # fire burst — 3 fire balls spread
+        for off in (-0.15,0,0.15):
+            bullets.append(make_bullet(d["x"],d["y"],ang+off,9,d["dmg"],FIRE_COL,False))
+        d["shoot_cd"]=50; play(snd_dragon)
+        add_particles(d["x"]+math.cos(ang)*25,d["y"]+math.sin(ang)*25,
+                      FIRE_COL,10,6,4,20)
+
+    # melee
+    if dist_player<d["radius"]+14+5:
+        hurt_player(player,d["dmg"]); do_shake(6)
+
+def draw_dragon(surf, d, cam_x, cam_y):
+    sx=int(d["x"]-cam_x+W//2); sy=int(d["y"]-cam_y+H//2)
+    a=d["anim"]; angle=d["angle"]
+    col=(255,180,100) if d["hit_flash"]>0 else DRAGON_G
+
+    # shadow
+    pygame.draw.ellipse(surf,(10,20,10),(sx-18,sy+14,36,12))
+
+    # tail (wavy)
+    for i in range(4):
+        tail_ang=angle+math.pi+math.sin(a*0.3+i)*0.3
+        tx2=sx+int(math.cos(tail_ang)*(i+1)*10)
+        ty2=sy+int(math.sin(tail_ang)*(i+1)*10)
+        r2=max(3,8-i*2)
+        pygame.draw.circle(surf,DRAGON_D,(tx2,ty2),r2)
+
+    # body
+    pygame.draw.ellipse(surf,col,(sx-16,sy-10,32,22))
+    pygame.draw.ellipse(surf,DRAGON_D,(sx-16,sy-10,32,22),2)
+
+    # wings (flap with anim)
+    wing_flap=int(math.sin(a*0.4)*8)
+    # left wing
+    pygame.draw.polygon(surf,(30,100,30),[
+        (sx-8,sy),(sx-30,sy-20+wing_flap),(sx-20,sy-6)])
+    # right wing
+    pygame.draw.polygon(surf,(30,100,30),[
+        (sx+8,sy),(sx+30,sy-20+wing_flap),(sx+20,sy-6)])
+
+    # head
+    head_x=sx+int(math.cos(angle)*20)
+    head_y=sy+int(math.sin(angle)*20)
+    pygame.draw.circle(surf,col,(head_x,head_y),10)
+    pygame.draw.circle(surf,DRAGON_D,(head_x,head_y),10,2)
+
+    # horn
+    horn_ang=angle-math.pi/2
+    pygame.draw.line(surf,DRAGON_D,(head_x,head_y),
+                     (head_x+int(math.cos(horn_ang)*8),head_y+int(math.sin(horn_ang)*8)),2)
+
+    # glowing eye
+    eye_x=head_x+int(math.cos(angle)*5)
+    eye_y=head_y+int(math.sin(angle)*5)
+    pygame.draw.circle(surf,YELLOW,(eye_x,eye_y),4)
+    pygame.draw.circle(surf,FIRE_COL,(eye_x,eye_y),2)
+
+    # fire breath glow when shooting soon
+    if d["shoot_cd"]<15:
+        glow=int((15-d["shoot_cd"])*10)
+        fc=(min(255,glow*3),min(255,glow),0)
+        pygame.draw.circle(surf,fc,(head_x,head_y),6)
+
+    draw_hp_bar(surf,d,cam_x,cam_y,bw=40)
+
+# ─────────────────────────────────────────────
+#  PRAPTI
+# ─────────────────────────────────────────────
+prapti_rescued = False
+prapti_anim    = 0
+
+def update_prapti(player, boss, dragon):
+    global prapti_rescued
+    boss_dead   = (boss is None or not boss["alive"])
+    dragon_dead = (dragon is None or not dragon["alive"])
+    # must kill BOTH boss AND dragon to rescue
+    if boss_dead and dragon_dead and not prapti_rescued:
+        dist=math.hypot(player["x"]-PRAPTI_X, player["y"]-PRAPTI_Y)
+        if dist<80:
+            prapti_rescued=True; play(snd_rescued)
+            add_particles(PRAPTI_X,PRAPTI_Y,PINK,40,6,5,60)
+            add_particles(PRAPTI_X,PRAPTI_Y,WHITE,20,4,3,40)
+
+def draw_prapti(surf, cam_x, cam_y, frame):
+    global prapti_anim
+    prapti_anim+=1
+    if prapti_rescued: return
+    sx=int(PRAPTI_X-cam_x+W//2); sy=int(PRAPTI_Y-cam_y+H//2)
+    a=prapti_anim
+    pulse=abs(math.sin(a*0.05))
+    for r in range(30,10,-5):
+        gc=(int(255*pulse*(30-r)/20),0,int(200*pulse*(30-r)/20))
+        pygame.draw.circle(surf,gc,(sx,sy),r+20)
+    pygame.draw.ellipse(surf,(15,10,10),(sx-12,sy+10,24,10))
+    leg=int(math.sin(a*0.15)*3)
+    pygame.draw.line(surf,(180,100,140),(sx,sy+4),(sx-6,sy+16+leg),3)
+    pygame.draw.line(surf,(180,100,140),(sx,sy+4),(sx+6,sy+16-leg),3)
+    pygame.draw.circle(surf,(220,100,160),(sx,sy),11)
+    pygame.draw.circle(surf,PINK,(sx,sy),11,2)
+    pygame.draw.circle(surf,SKIN,(sx,sy-12),9)
+    pygame.draw.arc(surf,(180,80,120),(sx-10,sy-24,20,16),0,math.pi,4)
+    pygame.draw.circle(surf,(180,80,120),(sx-9,sy-16),4)
+    pygame.draw.circle(surf,(180,80,120),(sx+9,sy-16),4)
+    pygame.draw.circle(surf,WHITE,(sx-3,sy-12),3)
+    pygame.draw.circle(surf,WHITE,(sx+4,sy-12),3)
+    pygame.draw.circle(surf,(60,60,180),(sx-3,sy-12),1)
+    pygame.draw.circle(surf,(60,60,180),(sx+4,sy-12),1)
+    name=font_med.render("PRAPTI",True,PINK)
+    surf.blit(name,(sx-name.get_width()//2,sy-70))
+    lbl=font_tiny.render("SAVE ME!",True,PINK)
+    surf.blit(lbl,(sx-lbl.get_width()//2,sy-48))
+
+# ─────────────────────────────────────────────
+#  PICKUPS
+# ─────────────────────────────────────────────
+all_pickups=[]
+
+def spawn_pickup(x,y):
+    if random.random()<0.35:
+        kind=random.choice(["ammo","ammo","health","score"])
+        all_pickups.append([x,y,kind,random.randint(0,30)])
+
+def update_pickups(player):
+    for pk in all_pickups:
+        pk[3]+=1
+        dist=math.hypot(player["x"]-pk[0],player["y"]-pk[1])
+        if dist<28:
+            pk.append("dead"); play(snd_pickup)
+            if pk[2]=="ammo": player["ammo"]=min(player["max_ammo"],player["ammo"]+20); add_particles(pk[0],pk[1],YELLOW,8,4,3,20)
+            elif pk[2]=="health": player["hp"]=min(player["max_hp"],player["hp"]+30); add_particles(pk[0],pk[1],GREEN,8,4,3,20)
+            elif pk[2]=="score": player["score"]+=500; add_particles(pk[0],pk[1],YELLOW,8,4,3,20)
+    all_pickups[:]=[pk for pk in all_pickups if len(pk)==4]
+
+def draw_pickups(surf,cam_x,cam_y):
+    for pk in all_pickups:
+        sx=int(pk[0]-cam_x+W//2); sy=int(pk[1]-cam_y+H//2)+int(math.sin(pk[3]*0.1)*4)
+        if pk[2]=="ammo":
+            pygame.draw.rect(surf,YELLOW,(sx-10,sy-6,20,12)); pygame.draw.rect(surf,WHITE,(sx-10,sy-6,20,12),2)
+            surf.blit(font_tiny.render("AMMO",True,YELLOW),(sx-16,sy-22))
+        elif pk[2]=="health":
+            pygame.draw.line(surf,GREEN,(sx,sy-10),(sx,sy+10),4); pygame.draw.line(surf,GREEN,(sx-10,sy),(sx+10,sy),4)
+            surf.blit(font_tiny.render("+HP",True,GREEN),(sx-10,sy-22))
+        else:
+            pygame.draw.circle(surf,ORANGE,(sx,sy),10); pygame.draw.circle(surf,YELLOW,(sx,sy),10,2)
+            surf.blit(font_tiny.render("$500",True,ORANGE),(sx-14,sy-22))
+
+# ─────────────────────────────────────────────
+#  MAP DRAWING
+# ─────────────────────────────────────────────
+def draw_map(surf,cam_x,cam_y):
+    stx=max(0,cam_x//TILE-W//TILE//2-1); etx=min(MAP_W,cam_x//TILE+W//TILE//2+2)
+    sty=max(0,cam_y//TILE-H//TILE//2-1); ety=min(MAP_H,cam_y//TILE+H//TILE//2+2)
+    for ty in range(int(sty),int(ety)):
+        for tx in range(int(stx),int(etx)):
+            t=tiles[ty][tx]; px=tx*TILE-cam_x+W//2; py=ty*TILE-cam_y+H//2; r=(px,py,TILE,TILE)
+            if t==0:
+                pygame.draw.rect(surf,FLOOR,r); pygame.draw.rect(surf,(50,40,30),r,1)
+            elif t==1:
+                pygame.draw.rect(surf,WALL,r)
+                for row in range(2):
+                    by2=py+row*(TILE//2); off=(TILE//2) if row%2==0 else 0
+                    pygame.draw.line(surf,DARK_GREY,(px+off,by2),(px+off,by2+TILE//2),1)
+                pygame.draw.rect(surf,DARK_GREY,r,1)
+            elif t==2:
+                pygame.draw.rect(surf,FLOOR,r); pygame.draw.rect(surf,BROWN,(px+4,py+2,TILE-8,TILE-4))
+                pygame.draw.rect(surf,DARK_BROWN,(px+4,py+2,TILE-8,TILE-4),2)
+                pygame.draw.circle(surf,(180,140,60),(px+TILE-10,py+TILE//2),3)
+            elif t==3:
+                pygame.draw.rect(surf,WALL,r); pygame.draw.rect(surf,(60,100,150),(px+6,py+6,TILE-12,TILE-12))
+                pygame.draw.line(surf,DARK_GREY,(px+TILE//2,py+6),(px+TILE//2,py+TILE-6),2)
+                pygame.draw.line(surf,DARK_GREY,(px+6,py+TILE//2),(px+TILE-6,py+TILE//2),2)
+            elif t==4:
+                pygame.draw.rect(surf,FLOOR,r); pygame.draw.ellipse(surf,(100,0,0),(px+6,py+8,TILE-12,TILE-16))
+            elif t==5:
+                pygame.draw.rect(surf,(80,30,30),r); pygame.draw.rect(surf,(100,40,40),(px+4,py+4,TILE-8,TILE-8),2)
+            elif t==6:
+                pygame.draw.rect(surf,(30,20,8),r)
+                for p in range(4):
+                    py2=py+p*12
+                    if py2<py+TILE:
+                        pygame.draw.rect(surf,BRIDGE,(px+2,py2,TILE-4,8))
+                        pygame.draw.rect(surf,DARK_BROWN,(px+2,py2,TILE-4,8),1)
+                pygame.draw.line(surf,(150,100,40),(px+3,py),(px+3,py+TILE),2)
+                pygame.draw.line(surf,(150,100,40),(px+TILE-3,py),(px+TILE-3,py+TILE),2)
+
+# ─────────────────────────────────────────────
+#  MINIMAP
+# ─────────────────────────────────────────────
+def draw_minimap(surf,player,enemies,boss,dragon,frame):
+    mmw,mmh=180,130; mmx,mmy=W-mmw-10,10
+    mm=pygame.Surface((mmw,mmh)); mm.fill((10,8,6))
+    sx=mmw/(MAP_W*TILE); sy=mmh/(MAP_H*TILE)
+    for ty in range(MAP_H):
+        for tx in range(MAP_W):
+            t=tiles[ty][tx]; px=int(tx*TILE*sx); py=int(ty*TILE*sy)
+            pw=max(1,int(TILE*sx)); ph=max(1,int(TILE*sy))
+            if t==1: col=GREY
+            elif t==6: col=BRIDGE
+            elif t==2: col=BROWN
+            elif t in (0,4,5): col=(45,38,28)
+            else: col=(45,38,28)
+            pygame.draw.rect(mm,col,(px,py,pw,ph))
+    ppx=int(player["x"]*sx); ppy=int(player["y"]*sy)
+    pulse=abs(math.sin(frame*0.06))
+    pygame.draw.circle(mm,(0,int(150+80*pulse),int(150+80*pulse)),(ppx,ppy),4)
+    pygame.draw.circle(mm,WHITE,(ppx,ppy),2)
+    for e in enemies: pygame.draw.circle(mm,RED,(int(e["x"]*sx),int(e["y"]*sy)),2)
+    if boss and boss["alive"]:
+        bp=abs(math.sin(frame*0.1)); bc=(int(200+55*bp),int(60*bp),0)
+        pygame.draw.circle(mm,bc,(int(boss["x"]*sx),int(boss["y"]*sy)),6)
+    if dragon and dragon["alive"]:
+        pygame.draw.circle(mm,DRAGON_G,(int(dragon["x"]*sx),int(dragon["y"]*sy)),4)
+    if not prapti_rescued:
+        gp=abs(math.sin(frame*0.08)); gc=(int(255*gp),int(100*gp),int(200*gp))
+        pygame.draw.circle(mm,gc,(int(PRAPTI_X*sx),int(PRAPTI_Y*sy)),4)
+    pygame.draw.rect(mm,(100,70,30),(0,0,mmw,mmh),1)
+    surf.blit(mm,(mmx,mmy))
+    surf.blit(font_tiny.render("MINIMAP",True,(130,100,60)),
+              (mmx+mmw//2-35,mmy+mmh+3))
