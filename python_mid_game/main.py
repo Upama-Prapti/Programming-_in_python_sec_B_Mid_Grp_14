@@ -897,3 +897,294 @@ def draw_minimap(surf,player,enemies,boss,dragon,frame):
     surf.blit(mm,(mmx,mmy))
     surf.blit(font_tiny.render("MINIMAP",True,(130,100,60)),
               (mmx+mmw//2-35,mmy+mmh+3))
+def draw_hud(surf,player,wave,enemies,boss,dragon,frame):
+    panel=pygame.Surface((W,72)); panel.fill((8,5,4)); surf.blit(panel,(0,H-72))
+    pulse=abs(math.sin(frame*0.03))
+    pygame.draw.line(surf,(int(120+60*pulse),int(30*pulse),5),(0,H-72),(W,H-72),2)
+    hp_w=200; hp_r=player["hp"]/player["max_hp"]
+    pygame.draw.rect(surf,(30,0,0),(14,H-58,hp_w,18))
+    fc=GREEN if hp_r>0.5 else (ORANGE if hp_r>0.25 else RED)
+    pygame.draw.rect(surf,fc,(14,H-58,int(hp_w*hp_r),18))
+    pygame.draw.rect(surf,WHITE,(13,H-59,hp_w+2,20),1)
+    surf.blit(font_tiny.render(f"HP {int(player['hp'])}/{player['max_hp']}",True,WHITE),(18,H-56))
+    ac=YELLOW if player["ammo"]>10 else RED
+    surf.blit(font_small.render(f"AMMO: {player['ammo']}",True,ac),(14,H-34))
+    sc=font_med.render(f"{player['score']:,}",True,(int(200+55*pulse),int(180+40*pulse),0))
+    surf.blit(sc,(W//2-sc.get_width()//2,H-62))
+    surf.blit(font_tiny.render(f"SCORE  |  ROOM {wave}",True,ORANGE),(W//2-60,H-30))
+    kills_left=len(enemies)+(1 if boss and boss["alive"] else 0)+(1 if dragon and dragon["alive"] else 0)
+    surf.blit(font_small.render(f"ENEMIES: {kills_left}",True,RED),(W-220,H-58))
+    if prapti_rescued:
+        surf.blit(font_small.render("PRAPTI SAFE!",True,PINK),(W-220,H-34))
+    elif boss and boss["alive"]:
+        db=bool(dragon and dragon["alive"])
+        msg="KILL BOSS+DRAGON!" if db else "KILL THE BOSS!"
+        surf.blit(font_small.render(msg,True,ORANGE),(W-220,H-34))
+    else:
+        surf.blit(font_small.render("FIND PRAPTI!",True,(200,180,80)),(W-220,H-34))
+
+def draw_crosshair(surf,mx,my):
+    c=(255,220,50)
+    pygame.draw.circle(surf,c,(mx,my),16,1)
+    pygame.draw.line(surf,c,(mx-22,my),(mx-8,my),2); pygame.draw.line(surf,c,(mx+8,my),(mx+22,my),2)
+    pygame.draw.line(surf,c,(mx,my-22),(mx,my-8),2); pygame.draw.line(surf,c,(mx,my+8),(mx,my+22),2)
+    pygame.draw.circle(surf,WHITE,(mx,my),2)
+
+# ─────────────────────────────────────────────
+#  SPAWN WAVE
+# ─────────────────────────────────────────────
+def random_floor_far_from(px,py,min_dist=250):
+    for _ in range(200):
+        tx=random.randint(1,MAP_W-2); ty=random.randint(1,MAP_H-2)
+        if tiles[ty][tx] in (0,6):
+            ex=tx*TILE+24; ey=ty*TILE+24
+            if math.hypot(ex-px,ey-py)>min_dist: return ex,ey
+    return random.randint(1,MAP_W-2)*TILE+24, random.randint(1,MAP_H-2)*TILE+24
+
+def spawn_wave(wave,player):
+    enemies=[]
+    for _ in range(4+wave*3):
+        x,y=random_floor_far_from(player["x"],player["y"])
+        enemies.append(make_grunt(x,y,wave))
+    for _ in range(max(0,wave-1)*2):
+        x,y=random_floor_far_from(player["x"],player["y"])
+        enemies.append(make_shooter(x,y,wave))
+    # Boss + dragon always present — guard Prapti
+    boss   = make_boss()
+    dragon = make_dragon(BOSS_X, BOSS_Y)
+    return enemies, boss, dragon
+
+# ─────────────────────────────────────────────
+#  SCREENS
+# ─────────────────────────────────────────────
+def draw_title(surf,frame):
+    surf.fill((8,4,4))
+    for i in range(20):
+        x=(i*64+frame//2)%W; h=30+int(math.sin(i*1.3+frame*0.02)*20)
+        pygame.draw.rect(surf,DARK_RED,(x,0,6,h)); pygame.draw.circle(surf,RED,(x+3,h),4)
+    for off in range(8,0,-2):
+        t=font_big.render("HELLHOUSE",True,(off*15,0,0))
+        surf.blit(t,(W//2-t.get_width()//2+random.randint(-1,1),55))
+    t=font_big.render("HELLHOUSE",True,RED); surf.blit(t,(W//2-t.get_width()//2,55))
+    sub=font_med.render("Save Prapti From The Darkness",True,(200,150,100))
+    surf.blit(sub,(W//2-sub.get_width()//2,162))
+    pygame.draw.line(surf,(80,30,20),(80,218),(W-80,218),2)
+    col_left=100; col_desc=340; y0=240
+    surf.blit(font_med.render("CONTROLS",True,ORANGE),(col_left,y0))
+    controls=[("W/S/A/D","Move"),("MOUSE","Aim"),("CLICK","Shoot"),("ESC","Quit")]
+    for i,(key,desc) in enumerate(controls):
+        y=y0+42+i*38
+        kw=font_small.render(key,True,YELLOW)
+        pygame.draw.rect(surf,(40,20,5),(col_left-4,y-4,max(kw.get_width()+16,120),kw.get_height()+8))
+        pygame.draw.rect(surf,(100,60,20),(col_left-4,y-4,max(kw.get_width()+16,120),kw.get_height()+8),1)
+        surf.blit(kw,(col_left+4,y))
+        surf.blit(font_small.render("→",True,(100,80,60)),(col_desc-28,y))
+        surf.blit(font_small.render(desc,True,WHITE),(col_desc,y))
+    pygame.draw.line(surf,(60,25,15),(W//2+40,222),(W//2+40,H-88),1)
+    col_right=W//2+60
+    surf.blit(font_med.render("OBJECTIVE",True,ORANGE),(col_right,y0))
+    objs=[(PINK,"★ Find Prapti (bottom room)"),(RED,"★ Kill Demon Lord + Dragon"),
+          (ORANGE,"★ Near boss? All demons swarm!"),(YELLOW,"★ Survive the waves"),
+          (GREEN,"★ Grab health & ammo drops")]
+    for i,(col,txt) in enumerate(objs):
+        surf.blit(font_small.render(txt,True,col),(col_right,y0+42+i*36))
+    tips_y=y0+42+len(objs)*36+14
+    pygame.draw.rect(surf,(25,8,8),(col_right-8,tips_y-8,W-col_right-60,130))
+    pygame.draw.rect(surf,(80,30,20),(col_right-8,tips_y-8,W-col_right-60,130),1)
+    surf.blit(font_small.render("TIPS",True,ORANGE),(col_right,tips_y))
+    tips=["Boss + Dragon guard Prapti in bottom room",
+          "Get near boss and ALL demons swarm you!",
+          "Kill the Dragon first — it circles the boss",
+          "Dodge dragon fire — it hits hard"]
+    for i,tip in enumerate(tips):
+        surf.blit(font_tiny.render(f"• {tip}",True,(180,160,140)),(col_right,tips_y+28+i*22))
+    pygame.draw.line(surf,(80,30,20),(80,H-88),(W-80,H-88),2)
+    legend=[(TEAL,"You"),(RED,"Demons"),(ORANGE,"Boss"),(DRAGON_G,"Dragon"),(PINK,"Prapti")]
+    for i,(col,lbl) in enumerate(legend):
+        lx=80+i*220
+        pygame.draw.circle(surf,col,(lx,H-58),8); pygame.draw.circle(surf,WHITE,(lx,H-58),8,1)
+        surf.blit(font_small.render(lbl,True,col),(lx+14,H-66))
+    pulse=abs(math.sin(frame*0.04))
+    ec=(int(50*pulse),int(200*pulse+55),int(80*pulse))
+    enter=font_med.render("PRESS  ENTER  TO  BEGIN",True,ec)
+    surf.blit(enter,(W//2-enter.get_width()//2,H-34))
+    surf.blit(font_tiny.render("Made by PRAPTI",True,(100,80,60)),(W-150,H-18))
+
+def draw_gameover(surf,player,hi_score,frame,scores_data):
+    surf.fill((5,2,2))
+    for off in range(6,0,-2):
+        t=font_big.render("YOU  DIED",True,(off*20,0,0))
+        surf.blit(t,(W//2-t.get_width()//2+random.randint(-2,2),H//2-320+random.randint(-2,2)))
+    t=font_big.render("YOU  DIED",True,RED); surf.blit(t,(W//2-t.get_width()//2,H//2-320))
+
+    # this run stats
+    bx,by,bw,bh=W//2-200,H//2-240,400,120
+    pygame.draw.rect(surf,(20,8,8),(bx,by,bw,bh)); pygame.draw.rect(surf,(100,20,20),(bx,by,bw,bh),2)
+    surf.blit(font_med.render(f"Score : {player['score']:,}",True,(180,160,140)),(bx+20,by+12))
+    surf.blit(font_med.render(f"Best  : {hi_score:,}",       True,YELLOW),       (bx+20,by+50))
+    surf.blit(font_med.render(f"Kills : {player['kills']}",  True,RED),           (bx+20,by+88))
+
+    # leaderboard
+    lb = scores_data.get("leaderboard",[])
+    lx,ly = W//2-300, H//2-100
+    pygame.draw.rect(surf,(15,5,5),(lx-10,ly-10,620,min(10,len(lb))*30+60))
+    pygame.draw.rect(surf,(80,20,20),(lx-10,ly-10,620,min(10,len(lb))*30+60),1)
+    surf.blit(font_small.render("─── TOP 10 LEADERBOARD ───",True,ORANGE),(lx+80,ly))
+    surf.blit(font_tiny.render(f"Total games: {scores_data.get('total_games',0)}   "
+                               f"Total kills: {scores_data.get('total_kills',0)}",
+                               True,GREY),(lx,ly+22))
+    for i,entry in enumerate(lb[:10]):
+        medal=["🥇","🥈","🥉"][i] if i<3 else f"#{i+1}"
+        col=YELLOW if i==0 else (LIGHT_STONE if i<3 else GREY) if True else GREY
+        LIGHT_STONE=(180,170,160)
+        col=YELLOW if i==0 else ((200,200,200) if i==1 else ((180,130,80) if i==2 else (140,140,140)))
+        line=(f"  {i+1}.  score={entry['score']:<8,}  kills={entry['kills']:<4}  "
+              f"wave={entry['wave']:<3}  {entry['result']:<6}  {entry['date']}")
+        surf.blit(font_tiny.render(line,True,col),(lx,ly+48+i*26))
+
+    pulse=abs(math.sin(frame*0.06))
+    r=font_med.render("ENTER — retry    ESC — quit",True,(int(200+55*pulse),int(80+40*pulse),0))
+    surf.blit(r,(W//2-r.get_width()//2,H-50))
+
+def draw_win(surf,player,frame,scores_data):
+    surf.fill((4,8,4))
+    for _ in range(3):
+        pygame.draw.circle(surf,(255,200,255),(random.randint(0,W),random.randint(0,H)),random.randint(1,3))
+    pulse=abs(math.sin(frame*0.04))
+    tc=(int(50*pulse+200),int(200*pulse+55),int(80*pulse+100))
+    t=font_big.render("PRAPTI  IS  SAFE!",True,tc); surf.blit(t,(W//2-t.get_width()//2,60))
+    sub=font_med.render("You defeated the Demon Lord and his Dragon!",True,PINK)
+    surf.blit(sub,(W//2-sub.get_width()//2,150))
+
+    # this run stats
+    bx,by,bw,bh=W//2-200,200,400,110
+    pygame.draw.rect(surf,(5,20,5),(bx,by,bw,bh)); pygame.draw.rect(surf,(30,100,30),(bx,by,bw,bh),2)
+    surf.blit(font_med.render(f"Final Score:  {player['score']:,}",True,YELLOW),(bx+20,by+15))
+    surf.blit(font_med.render(f"Demons Slain: {player['kills']}",  True,RED),   (bx+20,by+58))
+
+    # leaderboard
+    lb = scores_data.get("leaderboard",[])
+    lx,ly = W//2-300, 330
+    pygame.draw.rect(surf,(5,15,5),(lx-10,ly-10,620,min(10,len(lb))*26+60))
+    pygame.draw.rect(surf,(20,80,20),(lx-10,ly-10,620,min(10,len(lb))*26+60),1)
+    surf.blit(font_small.render("─── TOP 10 LEADERBOARD ───",True,GREEN),(lx+80,ly))
+    surf.blit(font_tiny.render(f"Total games: {scores_data.get('total_games',0)}   "
+                               f"Total kills: {scores_data.get('total_kills',0)}",
+                               True,(120,160,120)),(lx,ly+22))
+    for i,entry in enumerate(lb[:10]):
+        col=YELLOW if i==0 else ((200,200,200) if i==1 else ((180,130,80) if i==2 else (140,140,140)))
+        line=(f"  {i+1}.  score={entry['score']:<8,}  kills={entry['kills']:<4}  "
+              f"wave={entry['wave']:<3}  {entry['result']:<6}  {entry['date']}")
+        surf.blit(font_tiny.render(line,True,col),(lx,ly+48+i*24))
+
+    r=font_med.render("ENTER — play again    ESC — quit",True,GREEN)
+    surf.blit(r,(W//2-r.get_width()//2,H-50))
+    surf.blit(font_tiny.render("Made by PRAPTI",True,(80,120,80)),(W-150,H-18))
+
+# ─────────────────────────────────────────────
+#  MAIN LOOP
+# ─────────────────────────────────────────────
+def main():
+    global prapti_rescued, prapti_anim, all_particles, all_pickups, shake
+
+    state    = "title"
+    frame    = 0
+    hi_score = 0
+    player   = None
+    enemies  = []
+    boss     = None
+    dragon   = None
+    bullets  = []
+    e_bullets= []
+    wave     = 1
+    flash_msgs=[]
+    session_start = 0   # pygame.time.get_ticks() when game starts
+
+    # load persistent scores
+    scores_data = load_scores()
+    hi_score    = scores_data["hi_score"]
+
+    def add_flash(txt,col,x=W//2,y=H//2-80):
+        flash_msgs.append([txt,col,80,x,y])
+
+    def draw_flashes(surf):
+        keep=[]
+        for m in flash_msgs:
+            m[2]-=1
+            if m[2]>0:
+                fnt=font_med if m[2]>50 else font_small
+                sh=fnt.render(m[0],True,BLACK)
+                surf.blit(sh,(m[3]-sh.get_width()//2+2,m[4]-(80-m[2])+2))
+                t=fnt.render(m[0],True,m[1])
+                surf.blit(t,(m[3]-t.get_width()//2,m[4]-(80-m[2])))
+                keep.append(m)
+        flash_msgs[:]=keep
+
+    def reset_game():
+        nonlocal player,enemies,boss,dragon,bullets,e_bullets,wave,session_start
+        global prapti_rescued,prapti_anim,all_particles,all_pickups,shake
+        all_particles.clear(); all_pickups.clear(); flash_msgs.clear()
+        prapti_rescued=False; prapti_anim=0; shake=0
+        player=make_player(); wave=1; bullets=[]; e_bullets=[]
+        enemies,boss,dragon=spawn_wave(wave,player)
+        session_start=pygame.time.get_ticks()
+        add_flash("FIND PRAPTI. KILL THEM ALL.",RED)
+        add_flash("BOSS + DRAGON GUARD HER!",ORANGE,W//2,H//2-40)
+
+    pygame.mouse.set_visible(False)
+
+    while True:
+        clock.tick(FPS); frame+=1
+        keys=pygame.key.get_pressed(); mx,my=pygame.mouse.get_pos()
+
+        for ev in pygame.event.get():
+            if ev.type==pygame.QUIT: pygame.quit(); sys.exit()
+            if ev.type==pygame.KEYDOWN:
+                if ev.key==pygame.K_ESCAPE: pygame.quit(); sys.exit()
+                if state=="title" and ev.key==pygame.K_RETURN:
+                    reset_game(); state="playing"
+                elif state in ("dead","win") and ev.key==pygame.K_RETURN:
+                    hi_score = scores_data["hi_score"]
+                    state="title"
+
+        if state=="title":
+            draw_title(screen,frame); pygame.display.flip(); continue
+        if state=="dead":
+            draw_gameover(screen,player,hi_score,frame,scores_data); pygame.display.flip(); continue
+        if state=="win":
+            draw_win(screen,player,frame,scores_data); pygame.display.flip(); continue
+
+        # ── UPDATE ──────────────────────────────
+        cam_x,cam_y=get_camera(player)
+        aim_player(player,mx,my,cam_x,cam_y)
+        update_player(player,keys)
+        if pygame.mouse.get_pressed()[0]:
+            player_shoot(player,bullets,mx,my,cam_x,cam_y)
+
+        for b in bullets: update_bullet(b)
+        for b in e_bullets: update_bullet(b)
+        bullets=[b for b in bullets if b["alive"]]
+        e_bullets=[b for b in e_bullets if b["alive"]]
+
+        boss_alive  = boss is not None and boss["alive"]
+        boss_x      = boss["x"] if boss else 0
+        boss_y      = boss["y"] if boss else 0
+        dragon_alive= dragon is not None and dragon["alive"]
+
+        for e in enemies:
+            if e["kind"]=="grunt":
+                update_grunt(e,player,e_bullets,boss_alive,boss_x,boss_y)
+            elif e["kind"]=="shooter":
+                update_shooter(e,player,e_bullets,boss_alive,boss_x,boss_y)
+
+        if boss_alive:
+            update_boss(boss,player,e_bullets)
+        elif boss is not None:
+            boss=None
+
+        if dragon_alive:
+            update_dragon(dragon,boss,player,e_bullets)
+        elif dragon is not None:
+            dragon=None
+
+        
