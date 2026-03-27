@@ -1187,4 +1187,82 @@ def main():
         elif dragon is not None:
             dragon=None
 
-        
+            all_enemies=enemies+([boss] if boss else [])+([dragon] if dragon else [])
+        for b in bullets:
+            if not b["alive"]: continue
+            for e in all_enemies:
+                if not e["alive"]: continue
+                if math.hypot(b["x"]-e["x"],b["y"]-e["y"])<e["radius"]+4:
+                    killed=hurt_enemy(e,b["dmg"]); b["alive"]=False; do_shake(3)
+                    if killed:
+                        player["score"]+=e["score"]; player["kills"]+=1
+                        spawn_pickup(e["x"],e["y"])
+                        if e["kind"]=="boss":
+                            add_flash("DEMON LORD SLAIN!",ORANGE)
+                            add_flash("NOW KILL THE DRAGON!",RED,W//2,H//2-30)
+                            do_shake(18)
+                        elif e["kind"]=="dragon":
+                            add_flash("DRAGON SLAIN!",DRAGON_G)
+                            do_shake(12)
+                    break
+
+        # enemy bullets hit player
+        pr=pygame.Rect(player["x"]-player["radius"],player["y"]-player["radius"],
+                       player["radius"]*2,player["radius"]*2)
+        for b in e_bullets:
+            if b["alive"] and pr.collidepoint(b["x"],b["y"]):
+                hurt_player(player,b["dmg"]); b["alive"]=False; do_shake(5)
+
+        enemies=[e for e in enemies if e["alive"]]
+        update_pickups(player)
+        update_prapti(player,boss,dragon)
+        update_particles()
+        hi_score=max(hi_score,player["score"])
+
+        if not player["alive"]:
+            duration = (pygame.time.get_ticks() - session_start) / 1000
+            scores_data = update_scores(scores_data, player["score"], player["kills"], wave, "DEAD")
+            hi_score    = scores_data["hi_score"]
+            save_scores(scores_data)
+            log_session(player["score"], player["kills"], wave, "DEAD", duration)
+            state="dead"; continue
+
+        if prapti_rescued:
+            duration = (pygame.time.get_ticks() - session_start) / 1000
+            scores_data = update_scores(scores_data, player["score"], player["kills"], wave, "WIN")
+            hi_score    = scores_data["hi_score"]
+            save_scores(scores_data)
+            log_session(player["score"], player["kills"], wave, "WIN", duration)
+            state="win"; continue
+
+        # next wave — boss+dragon persist always
+        if len(enemies)==0:
+            wave+=1
+            add_flash(f"WAVE {wave} — MORE DEMONS!",RED)
+            new_enemies,_,_=spawn_wave(wave,player)
+            enemies=new_enemies
+            # keep existing boss/dragon alive
+
+        # ── DRAW ────────────────────────────────
+        ox,oy=get_shake_offset()
+        gs=pygame.Surface((W,H)); gs.fill((15,10,8))
+        draw_map(gs,cam_x,cam_y)
+        draw_pickups(gs,cam_x,cam_y)
+        draw_prapti(gs,cam_x,cam_y,frame)
+        for b in e_bullets: draw_bullet(gs,b,cam_x-W//2,cam_y-H//2)
+        for e in enemies:
+            if e["kind"]=="grunt": draw_grunt(gs,e,cam_x,cam_y)
+            elif e["kind"]=="shooter": draw_shooter(gs,e,cam_x,cam_y)
+        if boss and boss["alive"]: draw_boss(gs,boss,cam_x,cam_y)
+        if dragon and dragon["alive"]: draw_dragon(gs,dragon,cam_x,cam_y)
+        for b in bullets: draw_bullet(gs,b,cam_x-W//2,cam_y-H//2)
+        draw_player(gs,player,cam_x,cam_y)
+        draw_particles(gs,cam_x,cam_y)
+        draw_minimap(gs,player,enemies,boss,dragon,frame)
+        draw_hud(gs,player,wave,enemies,boss,dragon,frame)
+        draw_flashes(gs)
+        draw_crosshair(gs,mx,my)
+        screen.blit(gs,(ox,oy))
+        pygame.display.flip()
+
+main()
