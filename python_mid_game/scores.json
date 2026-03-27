@@ -1,0 +1,14 @@
+{
+    "hi_score": 0,
+    "total_games": 1,
+    "total_kills": 0,
+    "leaderboard": [
+        {
+            "score": 0,
+            "kills": 0,
+            "wave": 1,
+            "result": "DEAD",
+            "date": "2026-03-27 22:50"
+        }
+    ]
+}

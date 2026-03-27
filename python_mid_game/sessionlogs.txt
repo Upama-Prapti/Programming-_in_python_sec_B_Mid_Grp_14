@@ -1,0 +1,1 @@
+[2026-03-27 22:50:42]  result=DEAD    score=0         kills=0     wave=1    time=8s
