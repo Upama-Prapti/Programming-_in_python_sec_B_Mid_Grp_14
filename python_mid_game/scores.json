@@ -1,8 +1,22 @@
 {
-    "hi_score": 0,
-    "total_games": 1,
-    "total_kills": 0,
+    "hi_score": 2140,
+    "total_games": 3,
+    "total_kills": 10,
     "leaderboard": [
+        {
+            "score": 2140,
+            "kills": 8,
+            "wave": 2,
+            "result": "DEAD",
+            "date": "2026-03-28 18:13"
+        },
+        {
+            "score": 240,
+            "kills": 2,
+            "wave": 1,
+            "result": "DEAD",
+            "date": "2026-03-28 18:16"
+        },
         {
             "score": 0,
             "kills": 0,

@@ -4,6 +4,7 @@ import random
 import sys
 import json
 import os
+import csv
 from datetime import datetime
 
 # ─────────────────────────────────────────────
@@ -11,23 +12,64 @@ from datetime import datetime
 # ─────────────────────────────────────────────
 SCORES_FILE  = "scores.json"
 SESSION_FILE = "sessionlogs.txt"
+CSV_FILE     = "__scores.csv"
+
+CSV_HEADERS  = ["date", "result", "score", "kills", "wave", "time_sec"]
+
+def init_csv():
+    """Create __scores.csv with headers if it doesn't exist."""
+    if not os.path.exists(CSV_FILE):
+        try:
+            with open(CSV_FILE, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(CSV_HEADERS)
+        except Exception as e:
+            print(f"[csv] Could not create: {e}")
+
+def append_csv(score, kills, wave, result, duration_sec):
+    """Append one row to __scores.csv."""
+    try:
+        with open(CSV_FILE, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                result,
+                score,
+                kills,
+                wave,
+                round(duration_sec, 1)
+            ])
+    except Exception as e:
+        print(f"[csv] Could not write: {e}")
 
 def load_scores():
     """Load scores.json — returns dict with hi_score and leaderboard list."""
+    default = {
+        "hi_score": 0,
+        "total_games": 0,
+        "total_kills": 0,
+        "leaderboard": []
+    }
     if os.path.exists(SCORES_FILE):
         try:
             with open(SCORES_FILE, "r") as f:
                 data = json.load(f)
-                return data
-        except:
-            pass
-    # default structure
-    return {
-        "hi_score": 0,
-        "total_games": 0,
-        "total_kills": 0,
-        "leaderboard": []   # list of {score, kills, wave, result, date}
-    }
+            # make sure it's a dict with expected keys
+            if not isinstance(data, dict):
+                raise ValueError("scores.json is not a dict — resetting")
+            # fill in any missing keys
+            for k, v in default.items():
+                if k not in data:
+                    data[k] = v
+            return data
+        except Exception as e:
+            print(f"[scores] Bad file, resetting: {e}")
+            # back up the broken file
+            try:
+                os.rename(SCORES_FILE, SCORES_FILE + ".bak")
+            except:
+                pass
+    return default
 
 def save_scores(data):
     """Write scores.json to disk."""
@@ -297,6 +339,7 @@ def update_player(p, keys):
     if p["inv_cd"]   > 0: p["inv_cd"]   -= 1
     if p["muzzle"]   > 0: p["muzzle"]   -= 1
     move_player(p, keys)
+
 def aim_player(p, mx, my, cam_x, cam_y):
     wx = mx + cam_x - W//2
     wy = my + cam_y - H//2
@@ -605,6 +648,7 @@ def update_boss(e, player, bullets):
                 bullets.append(make_bullet(e["x"],e["y"],ang,11,25,ORANGE,False))
         e["pattern"]=(e["pattern"]+1)%4
         play(snd_enemy)
+
 def draw_boss(surf, e, cam_x, cam_y):
     sx=int(e["x"]-cam_x+W//2); sy=int(e["y"]-cam_y+H//2)
     col=(255,100,100) if e["hit_flash"]>0 else (150,15,15)
@@ -897,6 +941,10 @@ def draw_minimap(surf,player,enemies,boss,dragon,frame):
     surf.blit(mm,(mmx,mmy))
     surf.blit(font_tiny.render("MINIMAP",True,(130,100,60)),
               (mmx+mmw//2-35,mmy+mmh+3))
+
+# ─────────────────────────────────────────────
+#  HUD
+# ─────────────────────────────────────────────
 def draw_hud(surf,player,wave,enemies,boss,dragon,frame):
     panel=pygame.Surface((W,72)); panel.fill((8,5,4)); surf.blit(panel,(0,H-72))
     pulse=abs(math.sin(frame*0.03))
@@ -1103,6 +1151,7 @@ def main():
     # load persistent scores
     scores_data = load_scores()
     hi_score    = scores_data["hi_score"]
+    init_csv()   # create __scores.csv with headers if not present
 
     def add_flash(txt,col,x=W//2,y=H//2-80):
         flash_msgs.append([txt,col,80,x,y])
@@ -1187,7 +1236,8 @@ def main():
         elif dragon is not None:
             dragon=None
 
-            all_enemies=enemies+([boss] if boss else [])+([dragon] if dragon else [])
+        # player bullets hit all enemies
+        all_enemies=enemies+([boss] if boss else [])+([dragon] if dragon else [])
         for b in bullets:
             if not b["alive"]: continue
             for e in all_enemies:
@@ -1225,6 +1275,7 @@ def main():
             hi_score    = scores_data["hi_score"]
             save_scores(scores_data)
             log_session(player["score"], player["kills"], wave, "DEAD", duration)
+            append_csv(player["score"], player["kills"], wave, "DEAD", duration)
             state="dead"; continue
 
         if prapti_rescued:
@@ -1233,6 +1284,7 @@ def main():
             hi_score    = scores_data["hi_score"]
             save_scores(scores_data)
             log_session(player["score"], player["kills"], wave, "WIN", duration)
+            append_csv(player["score"], player["kills"], wave, "WIN", duration)
             state="win"; continue
 
         # next wave — boss+dragon persist always
